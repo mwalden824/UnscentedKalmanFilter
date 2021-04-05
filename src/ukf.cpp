@@ -68,6 +68,13 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
   // covariance matrix (P_) then toggle initialized flag and return
   if (!is_initialized_) 
   {
+    n_x_ = 5;
+    n_aug_ = n_x_ + 2;
+    lambda_ = 3 - n_aug_;
+    Xsig_pred_ = MatrixXd(n_x_, (2*n_aug_+1));
+    x_ = VectorXd(n_x_);
+    P_ = MatrixXd(n_x_, n_x_);
+
     // Is measurement RADAR or LIDAR?
     if (meas_package.sensor_type_ == MeasurementPackage::LASER)
     {
@@ -113,30 +120,32 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
     }
     else
     {
-      cout << "ERROR: Unknown Sensor Type." << endl;
+      std::cout << "ERROR: Unknown Sensor Type." << std::endl;
       return;
     }
   }
   else  // Not First measurement
   {
     // Is measurement RADAR or LIDAR?
-    if (meas_package.sensor_type_ == MeasurementPackage::LASER)
+    if (meas_package.sensor_type_ == MeasurementPackage::LASER && use_laser_ == true)
     {
-      double delta_t = meas_package.timestamp_ - time_us_;
+      // Calculate delta t and convert to seconds
+      double delta_t = (meas_package.timestamp_ - time_us_)*1000000;
       UKF::Prediction(delta_t);
       UKF::UpdateLidar(meas_package);
       time_us_ = meas_package.timestamp_;
     }
-    else if (meas_package.sensor_type_ == MeasurementPackage::RADAR)
+    else if (meas_package.sensor_type_ == MeasurementPackage::RADAR && use_radar_ == true)
     {
-      double delta_t = meas_package.timestamp_ - time_us_;
+      // Calculate delta t and convert to seconds
+      double delta_t = (meas_package.timestamp_ - time_us_)*1000000;
       UKF::Prediction(delta_t);
       UKF::UpdateRadar(meas_package);
       time_us_ = meas_package.timestamp_;
     }
     else
     {
-      cout << "ERROR: Unknown Sensor Type." << endl;
+      std::cout << "ERROR: Unknown Sensor Type." << std::endl;
       return;
     }
 
@@ -154,7 +163,7 @@ void UKF::Prediction(double delta_t) {
   // and Augmented Sigma Point Matrix
   VectorXd x_aug = VectorXd(n_aug_);
   MatrixXd P_aug = MatrixXd(n_aug_, n_aug_);
-  MatrixXd Xsig_aug = MatrixXd(n_aug_, 2 * n_aug_ + 1);
+  MatrixXd Xsig_aug = MatrixXd(n_aug_, 2 * n_aug_ + 1);  
 
   // Fill in augmented state vector (x_aug)
   x_aug.head(5) = x_;
@@ -175,8 +184,8 @@ void UKF::Prediction(double delta_t) {
   Xsig_aug.col(0) = x_aug;
   for (int i = 1; i < (n_aug_+1); i++)
   {
-    Xsig_aug.col(i)         = x_aug + sqrt(lambda+n_aug_) * PaugSqrt.col(i-1);
-    Xsig_aug.col(i+n_aug_)  = x_aug - sqrt(lambda+n_aug_) * PaugSqrt.col(i-1);
+    Xsig_aug.col(i)         = x_aug + sqrt(lambda_+n_aug_) * PaugSqrt.col(i-1);
+    Xsig_aug.col(i+n_aug_)  = x_aug - sqrt(lambda_+n_aug_) * PaugSqrt.col(i-1);
   }
 
   // Calculate (1/2)t^2 for multiple use
@@ -190,10 +199,10 @@ void UKF::Prediction(double delta_t) {
     float psi = Xsig_aug(3,i);
     float psiDot = Xsig_aug(4,i);
     float nu_a = Xsig_aug(5,i);
-    float nu_psiDot = Xsig_aug(6,i);
+    float nu_psiDdot = Xsig_aug(6,i);
 
-    // Prevent division by 0  (NOTE:  THere should by some minimum value threshold here instead)
-    if (psiDot != 0)
+    // Prevent division by 0
+    if (psiDot > 0.0001)
     {
       Xsig_pred_(0,i) = Xsig_aug(0,i) + (vk/psiDot)*(sin(psi+psiDot*delta_t)-sin(psi)) + delT2*cos(psi)*nu_a; 
       Xsig_pred_(1,i) = Xsig_aug(1,i) + (vk/psiDot)*(-cos(psi+psiDot*delta_t)+cos(psi)) + delT2*sin(psi)*nu_a;
@@ -201,7 +210,7 @@ void UKF::Prediction(double delta_t) {
       Xsig_pred_(3,i) = Xsig_aug(3,i) + psiDot*delta_t+delT2*nu_psiDdot;
       Xsig_pred_(4,i) = Xsig_aug(4,i) + delta_t*nu_psiDdot;
     }
-    else  // psiDot == 0
+    else  // psiDot ~= 0
     {
       Xsig_pred_(0,i) = Xsig_aug(0,i) + vk*cos(psi)*delta_t + delT2*cos(psi)*nu_a;
       Xsig_pred_(1,i) = Xsig_aug(1,i) + vk*sin(psi)*delta_t + delT2*sin(psi)*nu_a;
