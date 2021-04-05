@@ -14,6 +14,9 @@ UKF::UKF() {
   // if this is false, radar measurements will be ignored (except during init)
   use_radar_ = true;
 
+  // Initialization flag for first measurement processing
+  is_initialized_ = false;
+
   // initial state vector
   x_ = VectorXd(5);
 
@@ -22,11 +25,11 @@ UKF::UKF() {
 
   // Process noise standard deviation longitudinal acceleration in m/s^2
   // std_a_ = 30;
-  std_a_ = 3;
+  std_a_ = 0.7;
 
   // Process noise standard deviation yaw acceleration in rad/s^2
   // std_yawdd_ = 30;
-  std_yawdd_ = 2;
+  std_yawdd_ = 0.5;
   
   /**
    * DO NOT MODIFY measurement noise values below.
@@ -60,8 +63,21 @@ UKF::UKF() {
   n_aug_ = n_x_ + 2;
   lambda_ = 3 - n_aug_;
   Xsig_pred_ = MatrixXd(n_x_, (2*n_aug_+1));
-  x_ = VectorXd(n_x_);
-  P_ = MatrixXd(n_x_, n_x_);
+
+  // Initialize covariance matrix (P_)
+  P_  <<  1,  0,  0,    0,                      0,
+          0,  1,  0,    0,                      0,
+          0,  0,  200,  0,                      0,
+          0,  0,  0,    std_laspx_*std_laspx_,  0,
+          0,  0,  0,    0,                      std_laspx_*std_laspx_;
+  
+  // Calculate and Initialize weights
+  weights_ = VectorXd(2*n_aug_+1);
+  weights_(0) = lambda_ / (lambda_ + n_aug_);
+  for (int i = 1; i < (2*n_aug_+1); i++)
+  {
+    weights_(i) = 1/(2*(lambda_+n_aug_));
+  }
 }
 
 UKF::~UKF() {}
@@ -84,13 +100,6 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
       x_(0) = meas_package.raw_measurements_(0);
       x_(1) = meas_package.raw_measurements_(1);
 
-      // Initialize covariance matrix (P_)
-      P_  <<  1,  0,  0,    0,                      0,
-              0,  1,  0,    0,                      0,
-              0,  0,  200,  0,                      0,
-              0,  0,  0,    std_laspx_*std_laspx_,  0,
-              0,  0,  0,    0,                      std_laspx_*std_laspx_;
-
       // Save time for initial measurement
       time_us_ = meas_package.timestamp_;
 
@@ -106,13 +115,6 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
       x_(0) = r * cos(theta);
       x_(1) = r * sin(theta);
 
-      // Initialize covariance matrix (P_)
-      P_  <<  1,  0,  0,    0,                      0,
-              0,  1,  0,    0,                      0,
-              0,  0,  200,  0,                      0,
-              0,  0,  0,    std_laspx_*std_laspx_,  0,
-              0,  0,  0,    0,                      std_laspx_*std_laspx_;
-
       // Save time for initial measurement
       time_us_ = meas_package.timestamp_;
 
@@ -127,22 +129,19 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
   }
   else  // Not First measurement
   {
+    // Calculate delta t and convert to seconds
+    double delta_t = (meas_package.timestamp_ - time_us_)/1000000.0;
+    UKF::Prediction(delta_t);
+    time_us_ = meas_package.timestamp_;
+
     // Is measurement RADAR or LIDAR?
     if (meas_package.sensor_type_ == MeasurementPackage::LASER && use_laser_ == true)
     {
-      // Calculate delta t and convert to seconds
-      double delta_t = (meas_package.timestamp_ - time_us_)/1000000.0;
-      UKF::Prediction(delta_t);
       UKF::UpdateLidar(meas_package);
-      time_us_ = meas_package.timestamp_;
     }
     else if (meas_package.sensor_type_ == MeasurementPackage::RADAR && use_radar_ == true)
     {
-      // Calculate delta t and convert to seconds
-      double delta_t = (meas_package.timestamp_ - time_us_)/1000000.0;
-      UKF::Prediction(delta_t);
       UKF::UpdateRadar(meas_package);
-      time_us_ = meas_package.timestamp_;
     }
     else
     {
@@ -218,14 +217,6 @@ void UKF::Prediction(double delta_t) {
       Xsig_pred_(3,i) = Xsig_aug(3,i) + psiDot*delta_t + delT2*nu_psiDdot;
       Xsig_pred_(4,i) = Xsig_aug(4,i) + delta_t*nu_psiDdot;
     }
-  }
-
-  // Calculate weights
-  weights_ = VectorXd(2*n_aug_+1);
-  weights_(0) = lambda_ / (lambda_ + n_aug_);
-  for (int i = 1; i < (2*n_aug_+1); i++)
-  {
-    weights_(i) = 1/(2*(lambda_+n_aug_));
   }
 
   // Calculate predictied state vector
