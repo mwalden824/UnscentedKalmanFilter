@@ -83,18 +83,20 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
               0,  0,  0,  1,  0,
               0,  0,  0,  0,  1;
 
+      // Save time for initial measurement
+      time_us_ = meas_package.timestamp_;
 
       // Set initialized flag to true
       is_initialized_ = true;
     }
     else if (meas_package.sensor_type_ == MeasurementPackage::RADAR)
     {
-      // FIX BELOW
       // Initialize state vector (x_)
       x_.fill(0);
-      x_(0) = meas_package.raw_measurements_(0);
-      x_(1) = meas_package.raw_measurements_(1);
-      x_(2) = meas_package.raw_measurements_(2);
+      float r = meas_package.raw_measurements_(0);
+      float theta = meas_package.raw_measurements_(1); 
+      x_(0) = r * cos(theta);
+      x_(1) = r * sin(theta);
 
       // Initialize covariance matrix (P_)
       P_  <<  1,  0,  0,  0,  0,
@@ -102,6 +104,9 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
               0,  0,  1,  0,  0,
               0,  0,  0,  1,  0,
               0,  0,  0,  0,  1;
+
+      // Save time for initial measurement
+      time_us_ = meas_package.timestamp_;
 
       // Set initialized flag to true
       is_initialized_ = true;
@@ -117,9 +122,17 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
     // Is measurement RADAR or LIDAR?
     if (meas_package.sensor_type_ == MeasurementPackage::LASER)
     {
+      double delta_t = meas_package.timestamp_ - time_us_;
+      UKF::Prediction(delta_t);
+      UKF::UpdateLidar(meas_package);
+      time_us_ = meas_package.timestamp_;
     }
     else if (meas_package.sensor_type_ == MeasurementPackage::RADAR)
     {
+      double delta_t = meas_package.timestamp_ - time_us_;
+      UKF::Prediction(delta_t);
+      UKF::UpdateRadar(meas_package);
+      time_us_ = meas_package.timestamp_;
     }
     else
     {
@@ -139,8 +152,8 @@ void UKF::Prediction(double delta_t) {
 
   // Initialize an augmented state vector, covariance matrix, 
   // and Augmented Sigma Point Matrix
-  VectorXd x_aug = VectorXd(7);
-  MatrixXd P_aug = MatrixXd(7, 7);
+  VectorXd x_aug = VectorXd(n_aug_);
+  MatrixXd P_aug = MatrixXd(n_aug_, n_aug_);
   MatrixXd Xsig_aug = MatrixXd(n_aug_, 2 * n_aug_ + 1);
 
   // Fill in augmented state vector (x_aug)
