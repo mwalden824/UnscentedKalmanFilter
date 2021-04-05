@@ -77,17 +77,19 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
       x_(1) = meas_package.raw_measurements_(1);
 
       // Initialize covariance matrix (P_)
-      P_  <<  std_laspx_*std_laspx_,  0,                      0,                    0,                        0,
-              0,                      std_laspy_*std_laspy_,  0,                    0,                        0,
-              0,                      0,                      std_radr_*std_radr_,  0,                        0,
-              0,                      0,                      0,                    std_radphi_*std_radphi_,  0,
-              0,                      0,                      0,                    0,                        std_radrd_*std_radrd_;
+      P_  <<  1,  0,  0,  0,  0,
+              0,  1,  0,  0,  0,
+              0,  0,  1,  0,  0,
+              0,  0,  0,  1,  0,
+              0,  0,  0,  0,  1;
+
 
       // Set initialized flag to true
       is_initialized_ = true;
     }
     else if (meas_package.sensor_type_ == MeasurementPackage::RADAR)
     {
+      // FIX BELOW
       // Initialize state vector (x_)
       x_.fill(0);
       x_(0) = meas_package.raw_measurements_(0);
@@ -228,6 +230,29 @@ void UKF::UpdateLidar(MeasurementPackage meas_package) {
    * covariance, P_.
    * You can also calculate the lidar NIS, if desired.
    */
+  int n_z = 2;
+  VectorXd z = VectorXd(n_z);
+  z <<  meas_package.raw_measurements_(0),
+        meas_package.raw_measurements_(1);
+
+  MatrixXd H = MatrixXd(n_z, n_x_);
+  H <<  1,  0,  0,  0,  0,
+        0,  1,  0,  0,  0;
+
+
+  MatrixXd R = MatrixXd(n_z, n_z);
+  R <<  std_laspx_*std_laspx_,  0,
+        0,                      std_laspy_*std_laspy_;
+
+  VectorXd z_pred = H * x_;
+  VectorXd y = z - z_pred;
+  MatrixXd S = H * P_ * H.transpose() + R;
+  MatrixXd K = P_ * H.transpose() * S.inverse();
+
+  x_ = x_ + (K * y);
+
+  MatrixXd I = MatrixXd::Identity(n_x_, n_x_);
+  P_ = (I - K * H) * P_;
 }
 
 void UKF::UpdateRadar(MeasurementPackage meas_package) {
@@ -237,11 +262,68 @@ void UKF::UpdateRadar(MeasurementPackage meas_package) {
    * covariance, P_.
    * You can also calculate the radar NIS, if desired.
    */
-   MatrixXd Tc = MatrixXd(n_x_, 3);
+
+  int n_z = 3;
+  MatrixXd Zsig = MatrixXd(n_z, 2 * n_aug_ + 1);
+  VectorXd z_pred = VectorXd(n_z);
+  MatrixXd S = MatrixXd(n_z, n_z);
+
+  // Transform Sigma Points into Measurement space
+  Zsig.fill(0);
+  for (int i = 0; i < (2*n_aug_+1); i++)
+  {
+    double px     = Xsig_pred_(0, i);
+    double py     = Xsig_pred_(1, i);
+    double v      = Xsig_pred_(2, i);
+    double psi    = Xsig_pred_(3, i);
+    double psiDot = Xsig_pred_(4, i);
+    Zsig(0, i) = sqrt(px*px+py*py);
+    Zsig(1, i) = atan2(py, px);
+    Zsig(2, i) = (px*cos(psi)*v+py*sin(psi)*v)/(sqrt(px*px+py*py));
+  }
+
+  // Calculate mean predicted measurement
+  z_pred.fill(0);
+  for (int i = 0; i < (2*n_aug_+1); i++)
+  {
+    z_pred += weights_(i)*Zsig.col(i);
+  }
+
+  // Calculate Innovation covariance matrix
+  S.fill(0);
+  for (int i = 0; i < (2*n_aug_+1); i++)
+  {
+    S += weights_(i)*(Zsig.col(i)-z_pred) * ((Zsig.col(i)-z_pred).transpose());
+  }
+
+  MatrixXd R = MatrixXd(n_z, n_z);
+  R <<  std_radr_*std_radr_,  0,                        0,
+        0,                    std_radphi_*std_radphi_,  0,
+        0,                    0,                        std_radrd_*std_radrd_;
+
+  S = S + R;
+
+  // Retrieve most recent measurements from meas_package data structure
+  VectorXd z = VectorXd(n_z);
+  z <<  meas_package.raw_measurements_(0),
+        meas_package.raw_measurements_(1),
+        meas_package.raw_measurements_(2);
+
+  // Initialize and Calculate Cross-Correlation Matrix
+  MatrixXd Tc = MatrixXd(n_x_, 3);
+  Tc.fill(0);
+  for (int i = 0; i < (2*n_aug_+1); i++)
+  {
+    Tc += weights_(i) * (Xsig_pred_.col(i) - x_) * (Zsig.col(i) - z_pred).transpose();
+  }
+
+  // Initialize and calculate Kalman Gain
+  MatrixXd K = MatrixXd(n_x_, n_z);
+  K = Tc * S.inverse();
 
    // Normalize angle
-   while (zDiff > M_PI) zDiff -= 2 * M_PI;
-   while (zDiff < M_PI) zDiff += 2 * M_PI;
+  //  while (zDiff > M_PI) zDiff -= 2 * M_PI;
+  //  while (zDiff < M_PI) zDiff += 2 * M_PI;
 
    // Update state and mean covariance matrices
    x_ = x_ + K * (z - z_pred);
