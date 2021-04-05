@@ -21,10 +21,12 @@ UKF::UKF() {
   P_ = MatrixXd(5, 5);
 
   // Process noise standard deviation longitudinal acceleration in m/s^2
-  std_a_ = 30;
+  // std_a_ = 30;
+  std_a_ = 3;
 
   // Process noise standard deviation yaw acceleration in rad/s^2
-  std_yawdd_ = 30;
+  // std_yawdd_ = 30;
+  std_yawdd_ = 2;
   
   /**
    * DO NOT MODIFY measurement noise values below.
@@ -54,6 +56,12 @@ UKF::UKF() {
    * TODO: Complete the initialization. See ukf.h for other member properties.
    * Hint: one or more values initialized above might be wildly off...
    */
+  n_x_ = 5;
+  n_aug_ = n_x_ + 2;
+  lambda_ = 3 - n_aug_;
+  Xsig_pred_ = MatrixXd(n_x_, (2*n_aug_+1));
+  x_ = VectorXd(n_x_);
+  P_ = MatrixXd(n_x_, n_x_);
 }
 
 UKF::~UKF() {}
@@ -68,13 +76,6 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
   // covariance matrix (P_) then toggle initialized flag and return
   if (!is_initialized_) 
   {
-    n_x_ = 5;
-    n_aug_ = n_x_ + 2;
-    lambda_ = 3 - n_aug_;
-    Xsig_pred_ = MatrixXd(n_x_, (2*n_aug_+1));
-    x_ = VectorXd(n_x_);
-    P_ = MatrixXd(n_x_, n_x_);
-
     // Is measurement RADAR or LIDAR?
     if (meas_package.sensor_type_ == MeasurementPackage::LASER)
     {
@@ -84,11 +85,11 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
       x_(1) = meas_package.raw_measurements_(1);
 
       // Initialize covariance matrix (P_)
-      P_  <<  1,  0,  0,  0,  0,
-              0,  1,  0,  0,  0,
-              0,  0,  1,  0,  0,
-              0,  0,  0,  1,  0,
-              0,  0,  0,  0,  1;
+      P_  <<  1,  0,  0,    0,                      0,
+              0,  1,  0,    0,                      0,
+              0,  0,  200,  0,                      0,
+              0,  0,  0,    std_laspx_*std_laspx_,  0,
+              0,  0,  0,    0,                      std_laspx_*std_laspx_;
 
       // Save time for initial measurement
       time_us_ = meas_package.timestamp_;
@@ -106,11 +107,11 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
       x_(1) = r * sin(theta);
 
       // Initialize covariance matrix (P_)
-      P_  <<  1,  0,  0,  0,  0,
-              0,  1,  0,  0,  0,
-              0,  0,  1,  0,  0,
-              0,  0,  0,  1,  0,
-              0,  0,  0,  0,  1;
+      P_  <<  1,  0,  0,    0,                      0,
+              0,  1,  0,    0,                      0,
+              0,  0,  200,  0,                      0,
+              0,  0,  0,    std_laspx_*std_laspx_,  0,
+              0,  0,  0,    0,                      std_laspx_*std_laspx_;
 
       // Save time for initial measurement
       time_us_ = meas_package.timestamp_;
