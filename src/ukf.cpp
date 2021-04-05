@@ -130,7 +130,7 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
     if (meas_package.sensor_type_ == MeasurementPackage::LASER && use_laser_ == true)
     {
       // Calculate delta t and convert to seconds
-      double delta_t = (meas_package.timestamp_ - time_us_)*1000000;
+      double delta_t = (meas_package.timestamp_ - time_us_)/1000000.0;
       UKF::Prediction(delta_t);
       UKF::UpdateLidar(meas_package);
       time_us_ = meas_package.timestamp_;
@@ -138,7 +138,7 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
     else if (meas_package.sensor_type_ == MeasurementPackage::RADAR && use_radar_ == true)
     {
       // Calculate delta t and convert to seconds
-      double delta_t = (meas_package.timestamp_ - time_us_)*1000000;
+      double delta_t = (meas_package.timestamp_ - time_us_)/1000000.0;
       UKF::Prediction(delta_t);
       UKF::UpdateRadar(meas_package);
       time_us_ = meas_package.timestamp_;
@@ -148,7 +148,6 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
       std::cout << "ERROR: Unknown Sensor Type." << std::endl;
       return;
     }
-
   }
 }
 
@@ -343,11 +342,14 @@ void UKF::UpdateRadar(MeasurementPackage meas_package) {
   MatrixXd K = MatrixXd(n_x_, n_z);
   K = Tc * S.inverse();
 
-   // Normalize angle
-  //  while (zDiff > M_PI) zDiff -= 2 * M_PI;
-  //  while (zDiff < M_PI) zDiff += 2 * M_PI;
+  // Calculate residual
+  VectorXd zDiff = z - z_pred;
+
+  // Normalize angle
+  while (zDiff(1) >  M_PI) zDiff(1) -= 2.0 * M_PI;
+  while (zDiff(1) < -M_PI) zDiff(1) += 2.0 * M_PI;
 
    // Update state and mean covariance matrices
-   x_ = x_ + K * (z - z_pred);
+   x_ = x_ + K * zDiff;
    P_ = P_ - K * S * K.transpose();
 }
